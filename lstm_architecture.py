@@ -90,6 +90,66 @@ def relu_fc(input_2D_tensor_list, features_len, new_features_len, config):
     return output_2D_tensor_list
 
 
+def conv_layer(input_hidden_tensor, config, n_outputs=64):
+    """define the 2 convolutional layers
+       argument: 
+            input_hidden_tensor: tensor shape: [batch_size, time_steps, n_intputs]
+            n_outputs: int num of conv layer output, default value is 64
+            config: used for determining input features value
+        return:
+            outputs:   tensor shape: [batch_size, time_steps, n_outputs]
+     """            
+    shape = input_hidden_tensor.get_shape()
+    print '================'
+    print input_hidden_tensor
+    print shape
+    print shape[1]
+    print shape[2]
+    intputs = tf.reshape(input_hidden_tensor, [-1, shape[1], 1, shape[2]])
+    #the shape of inputs is [batch_size, time_steps, 1, n_inputs]
+
+    with tf.variable_scope("conv_layers"):
+        conv_W = {
+            # 5x1 conv, n_inputs inputs, 32 outputs
+            'wc1': tf.Variable(tf.random_normal([5, 1, config.n_inputs, 32])),
+            # 5x1 conv, 32 inputs, 1024 outputs
+            'wc2': tf.Variable(tf.random_normal([5, 1, 32, 1024])),
+            # full connection, 1024 inputs, n_outputs
+            'wo': tf.Variable(tf.random_normal([1024, n_outputs]))
+        }
+        conv_b = {
+            'bc1': tf.Variable(tf.random_normal([32])),
+            'bc2': tf.Variable(tf.random_normal([1024])),
+            'bo': tf.Variable(tf.random_normal([n_outputs]))
+        }
+
+        def conv2d(X, W, b, stride=1):
+            X = tf.nn.conv2d(X, W, [1, stride, stride, 1], padding='SAME')
+            X = tf.nn.bias_add(X, b)
+            return tf.nn.relu(X)
+
+        def maxpool2d(X, k=2):
+            return tf.nn.max_pool(X, ksize=[1, k, 1, 1], strides=[1, k, 1, 1], padding='SAME')
+
+    conv1 = conv2d(intputs, conv_W['wc1'], conv_b['bc1'])
+    #the shape of conv1 should be [batch_size, time_steps, 1, 32]
+    print '==============='
+    print conv1
+    conv2 = conv2d(intputs, conv_W['wc2'], conv_b['bc2'])
+    #the shape of conv2 should be [batch_size, time_steps, 1, 1024]
+    print conv2
+    outputs = tf.squeeze(conv2, 2)
+    # the outputs has shape [batch_size, time_steps, 1024]
+    print outputs
+    outputs = tf.matmul(outputs, conv_W['wo']) +conv_b['bo']
+    # the outputs has shape [batch_size, time_steps, n_outputs]
+    print outputs
+    print '==============='
+    return outputs
+
+
+
+
 def single_LSTM_cell(input_hidden_tensor, n_outputs):
     """ define the basic LSTM layer
         argument:
@@ -103,6 +163,8 @@ def single_LSTM_cell(input_hidden_tensor, n_outputs):
     with tf.variable_scope("lstm_cell"):
         lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(n_outputs, state_is_tuple=True, forget_bias=0.999)
         outputs, _ = tf.nn.rnn(lstm_cell, input_hidden_tensor, dtype=tf.float32)
+    print input_hidden_tensor
+    print '================='
     return outputs
 
 
@@ -177,6 +239,7 @@ def residual_bidirectional_LSTM_layers(input_hidden_tensor, n_input, n_output, l
         return [batch_norm(out, config, i) for i, out in enumerate(hidden_LSTM_layer)]
 
 
+
 def LSTM_network(feature_mat, config, keep_prob_for_dropout):
     """model a LSTM Network,
       it stacks 2 LSTM layers, each layer has n_hidden=32 cells
@@ -192,6 +255,7 @@ def LSTM_network(feature_mat, config, keep_prob_for_dropout):
 
         feature_mat = tf.nn.dropout(feature_mat, keep_prob_for_dropout)
 
+        feature_mat=conv_layer(feature_mat, config)
         # Exchange dim 1 and dim 0
         feature_mat = tf.transpose(feature_mat, [1, 0, 2])
         print feature_mat.get_shape()
